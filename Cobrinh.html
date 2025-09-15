@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Snake Game</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(135deg, #2c3e50, #3498db);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    canvas {
+      background: #ecf0f1;
+      border: 8px solid #2c3e50;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      background: rgba(44,62,80,0.85);
+      color: #fff;
+      font-size: 24px;
+    }
+    button, select, label, input {
+      margin: 10px;
+      padding: 12px 28px;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button { background: #27ae60; color: #fff; transition: background 0.3s; }
+    button:hover { background: #2ecc71; }
+    select { background: #fff; color: #2c3e50; }
+    label { font-weight: normal; padding: 0; margin: 6px; }
+    input[type="checkbox"]{ width:18px; height:18px; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="600" height="600"></canvas>
+  <div id="overlay"></div>
+
+  <script>
+  // ==================== VARIÁVEIS GLOBAIS ====================
+  const canvas = document.getElementById('gameCanvas'); // referência ao canvas
+  const ctx = canvas.getContext('2d'); // contexto 2D para desenhar
+  const overlay = document.getElementById('overlay'); // div de menus
+
+  let snake, dir, food, score, lives; // estado do jogo
+  let cell = 20; // tamanho da célula
+  let gameSpeed = 100; // velocidade padrão (médio)
+  let mapSize = 600; // tamanho padrão do mapa
+  let frameCount = 0; // contador de frames para animações
+
+  // ====== SONS (configuração mais robusta) ======
+  // IMPORTANTE: os arquivos Musica.mp3, Maca.mp3 e Morte.mp3 devem estar
+  // no mesmo diretório que este arquivo HTML (e com exatamente esses nomes,
+  // respeitando maiúsculas/minúsculas). Renomeie se necessário.
+  const music = new Audio('Musica.mp3'); // trilha de fundo
+  music.loop = true; // em loop
+  music.preload = 'auto';
+  music.volume = 0.5; // volume inicial (0.0 - 1.0)
+
+  const eatSound = new Audio('Maca.mp3'); // som ao comer a maçã
+  eatSound.preload = 'auto';
+  eatSound.volume = 0.9;
+
+  const deathSound = new Audio('Morte.mp3'); // som de morte
+  deathSound.preload = 'auto';
+  deathSound.volume = 0.9;
+
+  // flag para controlar se efeitos sonoros/música estão habilitados
+  let soundEnabled = true;
+
+  // Função que tenta tocar a música e faz fallback caso o navegador bloqueie autoplay
+  function tryPlayMusic(){
+    if(!soundEnabled) return; // se som desabilitado, não tentar
+    // play() retorna uma Promise — navegadores modernos podem rejeitar se não houver interação do usuário
+    music.play().then(()=>{
+      // música começou com sucesso
+      console.log('Música tocando');
+    }).catch(err=>{
+      // reprodução automática foi bloqueada. Criamos um botão discreto para ativar o som via clique do usuário.
+      console.warn('Reprodução automática bloqueada pelo navegador:', err);
+      showEnableSoundButton();
+    });
+  }
+
+  function showEnableSoundButton(){
+    // cria um botão pequeno no canto para ativar o som
+    const btnId = 'enable-sound-btn';
+    if(document.getElementById(btnId)) return; // já existe
+    const btn = document.createElement('button');
+    btn.id = btnId;
+    btn.textContent = 'Ativar Som';
+    // estilo simples para ficar visível mas discreto
+    btn.style.position = 'absolute';
+    btn.style.right = '16px';
+    btn.style.top = '16px';
+    btn.style.padding = '8px 12px';
+    btn.style.fontSize = '14px';
+    document.body.appendChild(btn);
+    btn.addEventListener('click', ()=>{
+      music.play().then(()=>{
+        // remove o botão quando o som começar
+        btn.remove();
+      }).catch(e=>{
+        console.error('Erro ao tentar tocar música após clique:', e);
+      });
+    });
+  }
+
+  // Função utilitária para tocar efeitos com tratamento de promessa
+  function playSound(sound){
+    if(!soundEnabled) return; // não toca se som desabilitado
+    // algumas vezes o mesmo Audio não reinicia se estiver no meio de reprodução
+    // definimos currentTime = 0 para reiniciar
+    try{
+      sound.currentTime = 0; // reinicia áudio
+    }catch(e){}
+    sound.play().catch(err=>{
+      // ignora erros de reprodução (por exemplo, se navegador bloquear sons)
+      console.warn('Erro ao reproduzir som:', err);
+    });
+  }
+
+  // ======== FUNÇÕES DE MENU ========
+  function showOverlay(html){ overlay.innerHTML=html; overlay.style.display='flex'; }
+  function hideOverlay(){ overlay.style.display='none'; }
+
+  function mainMenu(){
+    // ao voltar para o menu, paramos a música para não ficar tocando em segundo plano
+    try{ music.pause(); music.currentTime = 0; }catch(e){}
+
+    // menu principal com botão START e link para opções
+    showOverlay(`
+      <h1>🐍 Snake Game</h1>
+      <button onclick="startSnake()">START</button>
+      <button onclick="optionsMenu()">Opções</button>
+    `);
+  }
+
+  function optionsMenu(){
+    // mostra opções: dificuldade, tamanho do mapa e controlar som
+    showOverlay(`
+      <h2>⚙️ Opções</h2>
+      <div style="display:flex;flex-direction:column;align-items:center;">
+        <label for="difficulty">Dificuldade (velocidade)</label>
+        <select id="difficulty">
+          <option value="120">Fácil</option>
+          <option value="100" selected>Médio</option>
+          <option value="60">Difícil</option>
+        </select>
+
+        <label for="mapSize">Tamanho do mapa</label>
+        <select id="mapSize">
+          <option value="400">Pequeno</option>
+          <option value="600" selected>Médio</option>
+          <option value="800">Grande</option>
+        </select>
+
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="soundOn" checked />
+          <label for="soundOn">Som ativado</label>
+        </div>
+
+        <div style="margin-top:12px;">
+          <button onclick="applyOptions()">Salvar</button>
+          <button onclick="mainMenu()">Voltar</button>
+        </div>
+      </div>
+    `);
+  }
+
+  function applyOptions(){
+    // lê opções e aplica
+    const diff = document.getElementById('difficulty').value;
+    const size = document.getElementById('mapSize').value;
+    const soundOnCheckbox = document.getElementById('soundOn');
+
+    gameSpeed = parseInt(diff);
+    mapSize = parseInt(size);
+    soundEnabled = !!soundOnCheckbox.checked;
+
+    // aplica tamanho do canvas
+    canvas.width = mapSize;
+    canvas.height = mapSize;
+
+    // se som foi desativado, pausamos tudo
+    if(!soundEnabled){
+      try{ music.pause(); }catch(e){}
+    }
+
+    mainMenu();
+  }
+
+  // ======== INICIO DO JOGO ========
+  function startSnake(){
+    hideOverlay();
+
+    // inicializa estado da cobra no centro (ajuste simples)
+    const startX = Math.floor((canvas.width/2)/cell)*cell;
+    const startY = Math.floor((canvas.height/2)/cell)*cell;
+    snake = [ [startX, startY], [startX-cell, startY], [startX-2*cell, startY] ];
+    dir = [1,0];
+
+    // inicializa comida, pontos e vidas
+    food = randomFood();
+    score = 0;
+    lives = 3;
+    frameCount = 0;
+
+    // tenta tocar música (pode ser bloqueada pelo navegador)
+    tryPlayMusic();
+
+    // inicia loop do jogo
+    snakeLoop();
+  }
+
+  // ======== GERAR COMIDA ========
+  function randomFood(){
+    // gera posição alinhada ao grid, evitando a posição atual da cobra
+    let fx, fy;
+    do{
+      fx = Math.floor(Math.random()*(canvas.width/cell))*cell;
+      fy = Math.floor(Math.random()*(canvas.height/cell))*cell;
+      // continua gerando enquanto estiver em cima de um segmento da cobra
+    } while(snake.some(seg=>seg[0]===fx && seg[1]===fy));
+    return [fx, fy];
+  }
+
+  // ======== LOOP PRINCIPAL ========
+  function snakeLoop(){
+    // limpa a tela
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    frameCount++;
+
+    // desenha grid de fundo (estético)
+    ctx.strokeStyle = '#e1e5e9';
+    for(let x=0;x<canvas.width;x+=cell){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+    for(let y=0;y<canvas.height;y+=cell){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+
+    // calcula nova cabeça com base na direção atual
+    const head = [snake[0][0] + dir[0]*cell, snake[0][1] + dir[1]*cell];
+
+    // verifica colisões com parede ou com o próprio corpo
+    const hitWall = head[0] < 0 || head[1] < 0 || head[0] >= canvas.width || head[1] >= canvas.height;
+    const hitSelf = snake.some(seg => seg[0] === head[0] && seg[1] === head[1]);
+    if(hitWall || hitSelf){
+      lives -= 1; // perde uma vida
+      if(lives <= 0){
+        // toca som de morte (tratado) e finaliza
+        playSound(deathSound);
+        return gameOver();
+      }
+      // reseta cobra para posição inicial e pausa curta
+      const startX = Math.floor((canvas.width/2)/cell)*cell;
+      const startY = Math.floor((canvas.height/2)/cell)*cell;
+      snake = [ [startX, startY], [startX-cell, startY], [startX-2*cell, startY] ];
+      dir = [1,0];
+      food = randomFood();
+      setTimeout(snakeLoop, gameSpeed * 3);
+      return;
+    }
+
+    // move a cobra (adiciona nova cabeça)
+    snake.unshift(head);
+
+    // verifica se comeu a maçã
+    if(head[0] === food[0] && head[1] === food[1]){
+      score += 10; // pontuação
+      playSound(eatSound); // som de comer (tratado)
+      food = randomFood(); // nova comida
+    } else {
+      // remove o último segmento (movimento normal)
+      snake.pop();
+    }
+
+    // ======== DESENHAR MAÇÃ ========
+    // corpo da maçã
+    ctx.beginPath();
+    ctx.fillStyle = '#e74c3c';
+    ctx.arc(food[0] + cell/2, food[1] + cell/2, cell/2 - 2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#c0392b';
+    ctx.stroke();
+    // caule
+    ctx.beginPath();
+    ctx.strokeStyle = '#6f4a2a';
+    ctx.lineWidth = 2;
+    ctx.moveTo(food[0] + cell/2, food[1] + 4);
+    ctx.lineTo(food[0] + cell/2, food[1] - 6);
+    ctx.stroke();
+    // folha
+    ctx.beginPath();
+    ctx.fillStyle = '#27ae60';
+    ctx.ellipse(food[0] + cell/2 + 6, food[1] - 4, 5, 7, Math.PI/4, 0, 2*Math.PI);
+    ctx.fill();
+
+    // ======== DESENHAR COBRA (segments) ========
+    snake.forEach((seg, i) => {
+      // cabeça ligeiramente maior
+      const radius = (i === 0) ? cell/2 : cell/2 - 2;
+
+      // gradiente radial para efeito 3D no segmento
+      const grad = ctx.createRadialGradient(seg[0]+cell/2, seg[1]+cell/2, 3, seg[0]+cell/2, seg[1]+cell/2, radius);
+      // variação de cor para dar boa leitura
+      grad.addColorStop(0, '#aef0c8');
+      grad.addColorStop(0.6, '#58d68d');
+      grad.addColorStop(1, '#117a43');
+      ctx.fillStyle = grad;
+
+      // desenha segmento como círculo
+      ctx.beginPath();
+      ctx.arc(seg[0]+cell/2, seg[1]+cell/2, radius, 0, Math.PI*2);
+      ctx.fill();
+
+      // se for cabeça, desenhar olhos e língua orientados pela direção
+      if(i === 0){
+        drawHeadDetails(seg, dir);
+      }
+    });
+
+    // ======== HUD ========
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = '20px Arial';
+    ctx.fillText(`Score: ${score}`, 20, 30);
+    ctx.fillText(`Lives: ${lives}`, canvas.width - 110, 30);
+
+    // agenda próximo frame
+    setTimeout(snakeLoop, gameSpeed);
+  }
+
+  // desenha olhos e língua orientados pela direção
+  function drawHeadDetails(seg, dir){
+    // posição central do segmento (cabeça)
+    const cx = seg[0] + cell/2;
+    const cy = seg[1] + cell/2;
+
+    // offsets dos olhos dependendo da direção
+    let ox = 0; // offset horizontal para olhos
+    let oy = 0; // offset vertical para olhos
+    // olhos são posicionados levemente para frente/para os lados
+    if(dir[0] === 1){ ox = 6; oy = 6; } // direita
+    if(dir[0] === -1){ ox = -6; oy = 6; } // esquerda
+    if(dir[1] === -1){ ox = 0; oy = -8; } // cima (olhos acima)
+    if(dir[1] === 1){ ox = 0; oy = 10; } // baixo (olhos abaixo)
+
+    // desenha olhos (branco)
+    ctx.fillStyle = '#ffffff';
+    // olho esquerdo
+    ctx.beginPath();
+    ctx.arc(cx - 6 + ox, cy - 4 + oy, 3, 0, Math.PI*2);
+    ctx.fill();
+    // olho direito
+    ctx.beginPath();
+    ctx.arc(cx + 6 + ox, cy - 4 + oy, 3, 0, Math.PI*2);
+    ctx.fill();
+
+    // desenha pupilas pretas menores, posicionadas mais para frente
+    ctx.fillStyle = '#000000';
+    const pupilForward = 2; // empurra pupila para frente
+    if(dir[0] === 1){ // direita
+      ctx.beginPath(); ctx.arc(cx - 6 + ox + pupilForward, cy - 4 + oy, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 6 + ox + pupilForward, cy - 4 + oy, 1.5, 0, Math.PI*2); ctx.fill();
+    } else if(dir[0] === -1){ // esquerda
+      ctx.beginPath(); ctx.arc(cx - 6 + ox - pupilForward, cy - 4 + oy, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 6 + ox - pupilForward, cy - 4 + oy, 1.5, 0, Math.PI*2); ctx.fill();
+    } else if(dir[1] === -1){ // cima
+      ctx.beginPath(); ctx.arc(cx - 6 + ox, cy - 4 + oy - pupilForward, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 6 + ox, cy - 4 + oy - pupilForward, 1.5, 0, Math.PI*2); ctx.fill();
+    } else { // baixo ou padrão
+      ctx.beginPath(); ctx.arc(cx - 6 + ox, cy - 4 + oy + pupilForward, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 6 + ox, cy - 4 + oy + pupilForward, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+
+    // língua bifurcada que aparece intermitentemente, apontando para a frente
+    if(frameCount % 15 < 6){
+      ctx.strokeStyle = '#c0392b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      // ponta da língua um pouco à frente da cabeça
+      const tx = cx + dir[0] * (cell/2 + 2);
+      const ty = cy + dir[1] * (cell/2 + 2);
+      // linha principal
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      // bifurcação: duas pequenas pontas
+      ctx.beginPath();
+      if(dir[0] !== 0){
+        // se horizontal, bifurcar para cima/baixo
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx + dir[0]*4, ty - 4);
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx + dir[0]*4, ty + 4);
+      } else {
+        // se vertical, bifurcar esquerda/direita
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - 4, ty + dir[1]*4);
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx + 4, ty + dir[1]*4);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // ======== GAME OVER ========
+  function gameOver(){
+    // pausa música no game over para evitar tocar em segundo plano
+    try{ music.pause(); }catch(e){}
+    playSound(deathSound);
+    showOverlay(`
+      <h2>💀 Game Over</h2>
+      <p>Pontuação final: ${score}</p>
+      <button onclick="mainMenu()">Voltar ao Menu</button>
+    `);
+  }
+
+  // ======== CONTROLES ========
+  document.addEventListener('keydown', e => {
+    // evita reversão direta (por exemplo, ir para esquerda quando movendo para a direita)
+    if(e.key === 'ArrowUp' && dir[1] === 0) dir = [0, -1];
+    if(e.key === 'ArrowDown' && dir[1] === 0) dir = [0, 1];
+    if(e.key === 'ArrowLeft' && dir[0] === 0) dir = [-1, 0];
+    if(e.key === 'ArrowRight' && dir[0] === 0) dir = [1, 0];
+  });
+
+  // ======== INICIA JOGO EXIBINDO MENU ========
+  mainMenu();
+
+  </script>
+</body>
+</html>
