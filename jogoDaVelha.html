@@ -600,5 +600,35 @@ statusText.textContent = 'Escolha modo e clique Start.';
    - Tudo está em um único arquivo; você pode ajustar cores e textos diretamente no topo do arquivo.
    ============================================================ */
 </script>
+
+  <!-- Música de fundo -->
+  <audio id="bg-music" src="Fundos.mp3" loop></audio>
+  <!-- Som de clique -->
+  <audio id="click-sound" src="Clique.mp3"></audio>
+
+  <script>
+    const bgMusic = document.getElementById('bg-music');
+    const clickSound = document.getElementById('click-sound');
+
+    // começa a tocar música de fundo quando o usuário clicar em Start ou no documento
+    function iniciarMusicaFundo() {
+      bgMusic.volume = 0.3; // volume
+      bgMusic.play();
+      // remove este listener depois que tocar
+      document.removeEventListener('click', iniciarMusicaFundo);
+      document.getElementById('startBtn').removeEventListener('click', iniciarMusicaFundo);
+    }
+
+    // adiciona listeners para desbloquear áudio
+    document.addEventListener('click', iniciarMusicaFundo);
+    document.getElementById('startBtn').addEventListener('click', iniciarMusicaFundo);
+
+    // função para tocar clique quando marcar X ou O
+    function tocarClique() {
+      clickSound.currentTime = 0;
+      clickSound.play();
+    }
+  </script>
+
 </body>
 </html>
