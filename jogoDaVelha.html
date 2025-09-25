@@ -1,0 +1,251 @@
+<!-- Jogo da Velha — arquivo HTML com explicações linha a linha. 
+     Observação: usei `//` apenas nas linhas dentro do <script> (JavaScript),
+     e comentários apropriados para HTML --
+<!doctype html> <!-- Declara o tipo de documento como HTML5 -->
+<html lang="pt-BR"> <!-- Elemento raiz; lang indica que o conteúdo está em Português do Brasil -->
+<head>
+<meta charset="utf-8"> <!-- Define a codificação de caracteres (UTF-8) -->
+<meta name="viewport" content="width=device-width,initial-scale=1"> <!-- Configura o viewport para responsividade em dispositivos móveis -->
+<title>Jogo da Velha — Local & CPU</title> <!-- Título da aba do navegador -->
+
+<style>
+/* Root: variáveis de cor usadas no CSS */
+:root{ --bg1:#07172a; --bg2:#05233a; --accent:#06b6d4; --muted:#9fb7c9; }
+/* Define altura e fontes base para html e body */
+html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;}
+/* Estilos principais do body (fundo gradiente, centralização, padding) */
+body{background:linear-gradient(180deg,var(--bg1),var(--bg2));display:flex;align-items:center;justify-content:center;padding:12px;color:#e6f6fb;}
+/* Layout principal do app com grid de duas colunas */
+.app{width:920px;max-width:100%;display:grid;grid-template-columns:420px 1fr;gap:14px;}
+/* Painéis com leve transparência, border-radius e sombra */
+.panel,.game-area{background:rgba(255,255,255,0.02);border-radius:10px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,0.55);}
+.title{font-size:18px;margin:0 0 6px;color:#dff6ff;} /* Título do painel */
+.subtitle{color:var(--muted);margin:0 0 12px;font-size:12px;} /* Subtítulo menor */
+.controls{display:flex;flex-direction:column;gap:8px;} /* Coluna de controles */
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;} /* Linha para rótulos + inputs */
+label{font-weight:700;font-size:12px;color:#dff6ff;} /* Estilo dos labels */
+select,input[type="number"]{padding:5px 7px;border-radius:7px;border:none;background:#042834;color:#dff6ff;flex:1;min-width:100px;} /* Inputs e selects */
+.start-btn{background:var(--accent);color:#012;border:none;padding:7px 10px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;} /* Botão iniciar */
+.muted{color:var(--muted);font-size:11px;} /* Texto auxiliar */
+.hud{display:flex;flex-wrap:wrap;gap:5px;align-items:center;justify-content:space-between;font-size:12px;} /* Cabeçalho com placar */
+.stats{display:flex;gap:5px;flex-wrap:wrap;} /* Caixa de estatísticas */
+.stat{background:rgba(255,255,255,0.03);padding:3px 6px;border-radius:6px;font-weight:700;font-size:12px;} /* Blocos de estatísticas */
+/* Grade do tabuleiro: 3x3 com gap */
+.board{width:100%;max-width:380px;aspect-ratio:1/1;display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:0 auto;}
+/* Estilo de cada célula */
+.cell{
+  background:rgba(255,255,255,0.02);
+  border-radius:10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  user-select:none;
+  transition:.1s;
+  color:#fff;
+  aspect-ratio:1/1;
+}
+/* Texto grande dentro da célula (X ou O) */
+.cell span{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  height:100%;
+  font-size:8vmin;   /* ocupa ~80% da célula */
+  line-height:1;
+}
+.cell:hover{transform:translateY(-3px);background:rgba(255,255,255,0.05);} /* Efeito ao passar o mouse */
+.cell.x span{color:#7efc8d;font-weight:900;} /* Estilo para X */
+.cell.o span{color:#ffd166;font-weight:900;} /* Estilo para O */
+.footer-controls{display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:wrap;} /* Botões de rodadas */
+button.secondary{background:rgba(255,255,255,0.04);color:#e6f6fb;border:none;padding:5px 8px;border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;} /* Botões secundários */
+/* Overlay (modal) mostrado ao terminar as rodadas */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:10;visibility:hidden;opacity:0;transition:.3s;}
+.overlay.show{visibility:visible;opacity:1;} /* Classe que mostra o overlay */
+.overlay-box{background:#072a3a;padding:20px;border-radius:12px;text-align:center;max-width:300px;} /* Caixa dentro do overlay */
+.overlay-box h2{margin:0 0 10px;font-size:20px;color:#fff;}
+.overlay-box p{margin:0 0 15px;color:var(--muted);}
+.overlay-box button{background:var(--accent);border:none;padding:7px 12px;border-radius:8px;font-weight:700;cursor:pointer;}
+/* Responsividade */
+@media (max-width:980px){.app{grid-template-columns:1fr;}.board{max-width:320px;}}
+@media (max-width:520px){body{padding:6px;}.panel,.game-area{padding:8px;}.board{max-width:260px;gap:5px;}.stat{padding:2px 5px;font-size:11px;}.start-btn{font-size:12px;padding:6px 8px;}button.secondary{font-size:11px;padding:4px 7px;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="panel">
+    <h1 class="title">Jogo da Velha</h1> <!-- Título visível no painel esquerdo -->
+    <p class="subtitle">Modo local ou contra CPU (fácil, médio, difícil) com sons integrados.</p> <!-- Descrição curta -->
+    <div class="controls">
+      <div class="row">
+        <label>Modo:</label>
+        <select id="mode">
+          <option value="local">2 Jogadores</option>
+          <option value="cpu-easy">CPU Fácil</option>
+          <option value="cpu-medium">CPU Médio</option>
+          <option value="cpu-hard">CPU Difícil</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Rodadas:</label>
+        <input type="number" id="rounds" value="3" min="1" max="15"> <!-- Número de rodadas -->
+      </div>
+      <button class="start-btn" onclick="startGame()">Iniciar</button> <!-- Inicia o jogo -->
+      <p class="muted">Selecione modo, nº de rodadas e clique iniciar.</p>
+    </div>
+  </div>
+
+  <div class="game-area">
+    <div class="hud">
+      <div class="stats">
+        <div class="stat">Jogador X: <span id="scoreX">0</span></div> <!-- Placar X -->
+        <div class="stat">Jogador O: <span id="scoreO">0</span></div> <!-- Placar O -->
+        <div class="stat">Empates: <span id="ties">0</span></div> <!-- Empates -->
+      </div>
+      <div class="stat">Rodada: <span id="round">0</span>/<span id="totalRounds">0</span></div> <!-- Rodada atual / total -->
+    </div>
+
+    <div id="board" class="board"></div> <!-- Tabuleiro (renderizado via JS) -->
+
+    <div class="footer-controls">
+      <button class="secondary" onclick="resetBoard()">Reiniciar Rodada</button>
+      <button class="secondary" onclick="resetGame()">Novo Jogo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Overlay -->
+<div id="overlay" class="overlay">
+  <div class="overlay-box">
+    <h2 id="overlayTitle">Fim de Jogo</h2>
+    <p id="overlayMsg"></p>
+    <button onclick="resetGame()">Novo Jogo</button>
+  </div>
+</div>
+
+<!-- 🎵 Áudios externos (som de clique e som de fim de jogo) -->
+<audio id="clickSound" src="sons/click.mp3"></audio> <!-- Som tocado ao marcar uma célula -->
+<audio id="endSound" src="sons/end.mp3"></audio> <!-- Som tocado quando todas as rodadas terminam -->
+
+<script>
+// A partir daqui: JavaScript com comentários // linha-a-linha
+// Seleciona o elemento do tabuleiro pelo ID
+const boardEl=document.getElementById("board");
+// Seleciona o overlay/modal de fim de jogo
+const overlay=document.getElementById("overlay");
+// Estado do jogo: variáveis iniciais
+let board=[],currentPlayer="X",gameActive=false,mode="local",round=0,totalRounds=0,scoreX=0,scoreO=0,ties=0;
+
+// Sons: obtém elementos <audio> já presentes no HTML
+const clickSound=document.getElementById("clickSound");
+const endSound=document.getElementById("endSound");
+
+// Função que inicia um novo jogo (reseta placares e inicia a primeira rodada)
+function startGame(){
+  overlay.classList.remove("show"); // Esconde overlay caso esteja visível
+  mode=document.getElementById("mode").value; // Lê o modo selecionado (local / cpu...)
+  totalRounds=parseInt(document.getElementById("rounds").value)||3; // Lê e valida número de rodadas
+  round=0;scoreX=0;scoreO=0;ties=0; // Reseta placares e contador de rodadas
+  updateScores(); // Atualiza o HUD com os valores zerados
+  nextRound(); // Começa a primeira rodada
+}
+
+// Avança para a próxima rodada ou mostra o overlay se todas as rodadas terminaram
+function nextRound(){
+  round++;if(round>totalRounds){showOverlay();return;} // Se passou do total, fim do jogo
+  board=["","","","","","","","",""];currentPlayer="X";gameActive=true; // Inicializa o tabuleiro e jogador
+  renderBoard(); // Desenha o tabuleiro na tela
+  document.getElementById("round").textContent=round; // Atualiza o contador na HUD
+  document.getElementById("totalRounds").textContent=totalRounds; // Mostra total de rodadas
+  if(mode.startsWith("cpu")&&currentPlayer==="O")cpuMove(); // Se a CPU jogar primeiro, executa jogada
+}
+
+// Renderiza (desenha) o tabuleiro com base no array `board`
+function renderBoard(){
+  boardEl.innerHTML=""; // Limpa conteúdo anterior
+  board.forEach((cell,i)=>{
+    const div=document.createElement("div"); // Cria a célula
+    div.className="cell"+(cell?(" "+cell.toLowerCase()):""); // Adiciona classe x ou o se houver valor
+    const span=document.createElement("span"); // Texto dentro da célula
+    span.textContent=cell; // Insere X ou O (ou vazio)
+    div.appendChild(span);
+    div.onclick=()=>makeMove(i); // Define o comportamento ao clicar (faz a jogada)
+    boardEl.appendChild(div); // Adiciona a célula ao tabuleiro
+  });
+}
+
+// Executa uma jogada no índice i
+function makeMove(i){
+  if(!gameActive||board[i])return; // Ignora se jogo pausado ou célula ocupada
+  board[i]=currentPlayer; clickSound.play(); // Marca a célula e toca som de clique
+  renderBoard(); // Atualiza visual do tabuleiro
+  if(checkWin()){endRound(currentPlayer);} // Se houve vitória, termina a rodada
+  else if(board.every(c=>c)){endRound("tie");} // Se não houver espaços vazios, empate
+  else{
+    currentPlayer=currentPlayer==="X"?"O":"X"; // Troca de jogador
+    if(mode.startsWith("cpu")&&currentPlayer==="O")setTimeout(cpuMove,400); // Se CPU for o próximo, joga com delay
+  }
+}
+
+// Lógica da CPU: escolhe um movimento conforme a dificuldade
+function cpuMove(){
+  let move=mode==="cpu-easy"?randomMove():mode==="cpu-medium"?mediumMove():bestMove();
+  if(move!==undefined)makeMove(move); // Executa a jogada da CPU
+}
+
+// Movimento aleatório (fácil): escolhe entre as células livres
+function randomMove(){let a=board.map((c,i)=>c?"":i).filter(x=>x!="");return a[Math.floor(Math.random()*a.length)];}
+
+// Médio: tenta usar a estratégia ótima (bestMove), senão aleatório
+function mediumMove(){return bestMove()??randomMove();}
+
+// Melhor movimento usando MiniMax (difícil)
+function bestMove(){
+  let bestScore=-Infinity,move;
+  board.forEach((c,i)=>{if(!c){board[i]="O";let s=minimax(board,0,false);board[i]="";if(s>bestScore){bestScore=s;move=i;}}});
+  return move;
+}
+
+// Implementação do algoritmo minimax
+function minimax(b,depth,isMax){
+  let w=getWinner(b);if(w==="O")return 10-depth;if(w==="X")return depth-10;if(!b.includes(""))return 0;
+  if(isMax){let best=-Infinity;b.forEach((c,i)=>{if(!c){b[i]="O";best=Math.max(best,minimax(b,depth+1,false));b[i]="";}});return best;}
+  else{let best=Infinity;b.forEach((c,i)=>{if(!c){b[i]="X";best=Math.min(best,minimax(b,depth+1,true));b[i]="";}});return best;}
+}
+
+// Checa se existe um vencedor no tabuleiro atual
+function checkWin(){return getWinner(board)!==null;}
+
+// Retorna o vencedor ('X' ou 'O') ou null se não houver
+function getWinner(b){const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];for(const [a,c,d]of wins)if(b[a]&&b[a]===b[c]&&b[a]===b[d])return b[a];return null;}
+
+// Finaliza a rodada, atualiza placares e agenda próxima rodada
+function endRound(w){
+  gameActive=false; // Pausa o jogo até próxima rodada
+  if(w==="X")scoreX++;else if(w==="O")scoreO++;else ties++; // Atualiza placares conforme resultado
+  updateScores();
+  setTimeout(nextRound,1000); // Aguarda 1s e inicia próxima rodada
+}
+
+// Atualiza os elementos do HUD com os valores atuais
+function updateScores(){
+  document.getElementById("scoreX").textContent=scoreX;
+  document.getElementById("scoreO").textContent=scoreO;
+  document.getElementById("ties").textContent=ties;
+}
+
+// Função para reiniciar apenas a rodada atual (avança para nextRound)
+function resetBoard(){if(round<=totalRounds)nextRound();}
+// Função para reiniciar o jogo completamente
+function resetGame(){startGame();}
+
+// Mostra o overlay com o placar final quando todas as rodadas terminam
+function showOverlay(){
+  let msg=`Placar final → X: ${scoreX} | O: ${scoreO} | Empates: ${ties}`; // Mensagem com template string
+  document.getElementById("overlayMsg").textContent=msg; // Insere mensagem no overlay
+  overlay.classList.add("show"); endSound.play(); // Mostra overlay e toca som de fim de jogo
+}
+</script>
+</body>
+</html>
